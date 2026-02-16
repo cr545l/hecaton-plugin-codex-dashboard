@@ -269,6 +269,44 @@ function drawSeparator(width) {
   return colors.separator + '\u2500'.repeat(width - 2) + ansi.reset;
 }
 
+function renderMinimized(state) {
+  const cols = termCols;
+  const d = state.data;
+  let line = '';
+
+  // Build: " Codex | 5h: 30% ██████░░░░ | 7d: 15% ███░░░░░░░ | Data: 5m"
+  line += colors.title + ansi.bold + ' Codex' + ansi.reset;
+
+  if (d) {
+    if (d.primary) {
+      const pct = d.primary.usedPercent ?? 0;
+      const windowLabel = d.primary.windowMinutes === 300 ? '5h' : `${Math.round(d.primary.windowMinutes / 60)}h`;
+      line += colors.dim + ' | ' + ansi.reset;
+      line += colors.label + windowLabel + ': ' + ansi.reset;
+      line += formatPercent(pct) + ' ' + progressBar(pct, 10);
+    }
+    if (d.secondary) {
+      const pct = d.secondary.usedPercent ?? 0;
+      const windowLabel = d.secondary.windowMinutes === 10080 ? '7d' : `${Math.round(d.secondary.windowMinutes / 1440)}d`;
+      line += colors.dim + ' | ' + ansi.reset;
+      line += colors.label + windowLabel + ': ' + ansi.reset;
+      line += formatPercent(pct) + ' ' + progressBar(pct, 10);
+    }
+    if (d.timestamp) {
+      line += colors.dim + ' | ' + ansi.reset;
+      line += colors.dim + 'Data: ' + formatTimestamp(d.timestamp) + ansi.reset;
+    }
+  }
+
+  // Pad to terminal width
+  const plain = line.replace(/\x1b\[[0-9;]*m/g, '');
+  const pad = Math.max(0, cols - plain.length);
+  line += ' '.repeat(pad);
+
+  process.stdout.write(ansi.clear + ansi.hideCursor);
+  process.stdout.write(ansi.moveTo(1, 1) + line + ansi.reset);
+}
+
 function render(state) {
   const width = Math.min(termCols, 72);
   const lines = [];
@@ -466,25 +504,31 @@ async function main() {
     error: null,
     data: null,
     startTime: Date.now(),
+    minimized: false,
   };
 
   render(state);
 
   const root = getSessionsRoot();
 
+  function rerender() {
+    if (state.minimized) renderMinimized(state);
+    else render(state);
+  }
+
   function refresh() {
     state.loading = true;
     state.error = null;
-    render(state);
+    rerender();
 
     try {
       state.data = parseLatestRateLimits(root);
       state.loading = false;
-      render(state);
+      rerender();
     } catch (e) {
       state.error = 'Parse error: ' + (e.message || 'unknown');
       state.loading = false;
-      render(state);
+      rerender();
     }
   }
 
@@ -508,6 +552,15 @@ async function main() {
         if (json.method === 'resize' && json.params) {
           termCols = json.params.cols || termCols;
           termRows = json.params.rows || termRows;
+          if (state.minimized) renderMinimized(state);
+          else render(state);
+        }
+        if (json.method === 'minimize') {
+          state.minimized = true;
+          renderMinimized(state);
+        }
+        if (json.method === 'restore') {
+          state.minimized = false;
           render(state);
         }
       } catch { /* ignore */ }
