@@ -274,14 +274,10 @@ function renderMinimized(state) {
   const d = state.data;
   let line = '';
 
-  // Build: " Codex | 5h: 30% ██████░░░░ | 7d: 15% ███░░░░░░░ | Data: 5m"
-  line += colors.title + ansi.bold + ' Codex' + ansi.reset;
-
   if (d) {
     if (d.primary) {
       const pct = d.primary.usedPercent ?? 0;
       const windowLabel = d.primary.windowMinutes === 300 ? '5h' : `${Math.round(d.primary.windowMinutes / 60)}h`;
-      line += colors.dim + ' | ' + ansi.reset;
       line += colors.label + windowLabel + ': ' + ansi.reset;
       line += formatPercent(pct) + ' ' + progressBar(pct, 10);
     }
@@ -545,25 +541,31 @@ async function main() {
   process.stdin.setEncoding('utf-8');
 
   process.stdin.on('data', (key) => {
-    // Host RPC
-    if (key.startsWith('__HECA_RPC__')) {
-      try {
-        const json = JSON.parse(key.slice(12).trim());
-        if (json.method === 'resize' && json.params) {
-          termCols = json.params.cols || termCols;
-          termRows = json.params.rows || termRows;
-          if (state.minimized) renderMinimized(state);
-          else render(state);
-        }
-        if (json.method === 'minimize') {
-          state.minimized = true;
-          renderMinimized(state);
-        }
-        if (json.method === 'restore') {
-          state.minimized = false;
-          render(state);
-        }
-      } catch { /* ignore */ }
+    // Host RPC – multiple RPCs can arrive in a single pipe read, so split
+    // and process each one separately.
+    if (key.indexOf('__HECA_RPC__') !== -1) {
+      const segments = key.split('__HECA_RPC__');
+      for (const seg of segments) {
+        const trimmed = seg.trim();
+        if (!trimmed) continue;
+        try {
+          const json = JSON.parse(trimmed);
+          if (json.method === 'resize' && json.params) {
+            termCols = json.params.cols || termCols;
+            termRows = json.params.rows || termRows;
+            if (state.minimized) renderMinimized(state);
+            else render(state);
+          }
+          if (json.method === 'minimize') {
+            state.minimized = true;
+            renderMinimized(state);
+          }
+          if (json.method === 'restore') {
+            state.minimized = false;
+            render(state);
+          }
+        } catch { /* ignore malformed segment */ }
+      }
       return;
     }
 
