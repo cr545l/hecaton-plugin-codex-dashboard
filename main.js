@@ -202,8 +202,10 @@ function formatResetTime(epochSec) {
   const remainMs = resetMs - Date.now();
   if (remainMs <= 0) return 'now';
   const totalMin = Math.floor(remainMs / 60000);
-  const hours = Math.floor(totalMin / 60);
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
   const minutes = totalMin % 60;
+  if (days > 0) return `${days}d${hours > 0 ? hours + 'h' : ''}`;
   if (hours > 0) return `${hours}h${minutes > 0 ? minutes + 'm' : ''}`;
   return `${minutes}m`;
 }
@@ -277,15 +279,17 @@ function renderMinimized(state) {
   if (d) {
     if (d.primary) {
       const pct = d.primary.usedPercent ?? 0;
+      const reset = formatResetTime(d.primary.resetsAt);
       const windowLabel = d.primary.windowMinutes === 300 ? '5h' : `${Math.round(d.primary.windowMinutes / 60)}h`;
-      line += colors.label + windowLabel + ': ' + ansi.reset;
+      line += colors.label + (reset || windowLabel) + ': ' + ansi.reset;
       line += formatPercent(pct) + ' ' + progressBar(pct, 10);
     }
     if (d.secondary) {
       const pct = d.secondary.usedPercent ?? 0;
+      const reset = formatResetTime(d.secondary.resetsAt);
       const windowLabel = d.secondary.windowMinutes === 10080 ? '7d' : `${Math.round(d.secondary.windowMinutes / 1440)}d`;
       line += colors.dim + ' | ' + ansi.reset;
-      line += colors.label + windowLabel + ': ' + ansi.reset;
+      line += colors.label + (reset || windowLabel) + ': ' + ansi.reset;
       line += formatPercent(pct) + ' ' + progressBar(pct, 10);
     }
     if (d.timestamp) {
