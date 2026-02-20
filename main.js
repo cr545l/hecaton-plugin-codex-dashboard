@@ -34,18 +34,18 @@ const ansi = {
 };
 
 const colors = {
-  bg: ansi.bg(15, 14, 35),
-  title: ansi.fg(150, 140, 225),
-  label: ansi.fg(180, 180, 200),
-  value: ansi.fg(255, 255, 255),
-  dim: ansi.fg(100, 100, 120),
-  green: ansi.fg(120, 220, 150),
-  yellow: ansi.fg(230, 200, 100),
-  red: ansi.fg(230, 110, 110),
-  cyan: ansi.fg(100, 200, 230),
-  orange: ansi.fg(230, 170, 100),
-  border: ansi.fg(60, 55, 110),
-  separator: ansi.fg(50, 45, 85),
+  bg: CSI + '49m',            // default background
+  title: CSI + '35m',         // magenta
+  label: CSI + '39m',         // default foreground
+  value: CSI + '39m',         // default foreground
+  dim: CSI + '2m',            // SGR dim
+  green: CSI + '32m',         // green
+  yellow: CSI + '33m',        // yellow
+  red: CSI + '31m',           // red
+  cyan: CSI + '36m',          // cyan
+  orange: CSI + '33m',        // yellow
+  border: CSI + '2m',         // SGR dim
+  separator: CSI + '2m',      // SGR dim
 };
 
 function colorForPercent(pct) {
