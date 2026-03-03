@@ -14,6 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { version: PLUGIN_VERSION } = require('./plugin.json');
 
 // ============================================================
 // ANSI Helpers
@@ -317,7 +318,7 @@ function render(state) {
   lines.push('');
   lines.push(centerText(
     colors.title + ansi.bold + ' Codex Dashboard ' + ansi.reset +
-    colors.dim + 'v1.0.1' + ansi.reset,
+    colors.dim + 'v' + PLUGIN_VERSION + ansi.reset,
     width
   ));
   lines.push('');
