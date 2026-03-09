@@ -11,10 +11,14 @@
  *   q / ESC - Close (handled by host)
  */
 
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { version: PLUGIN_VERSION } = require('./plugin.json');
+const PLUGIN_VERSION = (() => { try { const r = hecaton.fs_read_file({ path: __dirname + '/plugin.json' }); return r.ok ? JSON.parse(r.text).version : '1.0.0'; } catch { return '1.0.0'; } })();
+
+// ============================================================
+// Path utility (replaces require('path'))
+// ============================================================
+function joinPath(...parts) {
+  return parts.join('/').replace(/\\/g, '/').replace(/\/+/g, '/');
+}
 
 // ============================================================
 // ANSI Helpers
@@ -60,9 +64,10 @@ function colorForPercent(pct) {
 // ============================================================
 
 function getSessionsRoot() {
-  const envHome = process.env.CODEX_HOME;
-  if (envHome) return path.join(envHome, 'sessions');
-  return path.join(os.homedir(), '.codex', 'sessions');
+  const envHome = (hecaton.get_env({ name: 'CODEX_HOME' }) || {}).value;
+  const homeDir = hecaton.get_home_dir().home;
+  if (envHome) return joinPath(envHome, 'sessions');
+  return joinPath(homeDir, '.codex', 'sessions');
 }
 
 function findRecentJsonlFiles(root, daysBack = 7, limit = 20) {
@@ -76,14 +81,16 @@ function findRecentJsonlFiles(root, daysBack = 7, limit = 20) {
     const y = day.getFullYear().toString();
     const m = String(day.getMonth() + 1).padStart(2, '0');
     const d = String(day.getDate()).padStart(2, '0');
-    const folder = path.join(root, y, m, d);
+    const folder = joinPath(root, y, m, d);
 
     try {
-      const entries = fs.readdirSync(folder)
-        .filter(f => f.endsWith('.jsonl'))
-        .map(f => ({
-          path: path.join(folder, f),
-          mtime: fs.statSync(path.join(folder, f)).mtimeMs,
+      const result = hecaton.fs_read_dir({ path: folder });
+      if (!result.ok) continue;
+      const entries = result.entries
+        .filter(e => e.isFile && e.name.endsWith('.jsonl'))
+        .map(e => ({
+          path: joinPath(folder, e.name),
+          mtime: e.mtimeMs || 0,
         }));
       files.push(...entries);
     } catch { /* folder doesn't exist */ }
@@ -98,14 +105,14 @@ function findRecentJsonlFiles(root, daysBack = 7, limit = 20) {
 
 function tailRead(filePath, maxBytes = 256 * 1024) {
   try {
-    const stat = fs.statSync(filePath);
-    const size = stat.size;
-    const readSize = Math.min(maxBytes, size);
-    const fd = fs.openSync(filePath, 'r');
-    const buffer = Buffer.alloc(readSize);
-    fs.readSync(fd, buffer, 0, readSize, Math.max(0, size - readSize));
-    fs.closeSync(fd);
-    return buffer.toString('utf-8');
+    const result = hecaton.fs_read_file({ path: filePath });
+    if (!result.ok) return '';
+    const text = result.text;
+    // If the file is larger than maxBytes, take only the tail portion
+    if (text.length > maxBytes) {
+      return text.slice(text.length - maxBytes);
+    }
+    return text;
   } catch {
     return '';
   }
@@ -229,8 +236,8 @@ function formatTimestamp(ts) {
 // Rendering
 // ============================================================
 
-let termCols = parseInt(process.env.HECA_COLS || '80', 10);
-let termRows = parseInt(process.env.HECA_ROWS || '24', 10);
+let termCols = parseInt((hecaton.get_env({ name: 'HECA_COLS' }) || {}).value || '80', 10);
+let termRows = parseInt((hecaton.get_env({ name: 'HECA_ROWS' }) || {}).value || '24', 10);
 let clickableAreas = [];
 let hoveredAreaIndex = -1;
 let currentButtons = [];
@@ -469,7 +476,7 @@ function render(state) {
   clickableAreas = [];
   if (buttonLineIdx >= 0 && currentButtons.length > 0) {
     const screenRow = startRow + buttonLineIdx + 1; // +1 for box top border
-    const contentStart = startCol + 2; // after │ and space in box
+    const contentStart = startCol + 2; // after | and space in box
     const plainLine = lines[buttonLineIdx].replace(/\x1b\[[0-9;]*m/g, '');
     for (const btn of currentButtons) {
       const idx = plainLine.indexOf(btn.label);
@@ -604,11 +611,11 @@ async function main() {
 
       if (isRelease) continue;
 
-      // Scroll wheel up → refresh
+      // Scroll wheel up -> refresh
       if (cb === 64) { refresh(); continue; }
-      if (cb === 65) continue; // scroll down → ignore
+      if (cb === 65) continue; // scroll down -> ignore
 
-      // Left click → check clickable areas
+      // Left click -> check clickable areas
       if (cb === 0) {
         for (const area of clickableAreas) {
           if (cy === area.row && cx >= area.colStart && cx <= area.colEnd) {
