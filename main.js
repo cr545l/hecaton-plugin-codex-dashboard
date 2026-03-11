@@ -70,37 +70,73 @@ function getSessionsRoot() {
   return joinPath(homeDir, '.codex', 'sessions');
 }
 
+function extractTimestampFromName(name) {
+  // e.g. rollout-2026-03-12T06-16-47-... → 2026-03-12T06:16:47
+  const m = name.match(/(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})/);
+  if (!m) return 0;
+  return new Date(`${m[1]}T${m[2]}:${m[3]}:${m[4]}Z`).getTime() || 0;
+}
+
+function listSubDirs(parentPath) {
+  try {
+    const result = hecaton.fs_read_dir({ path: parentPath });
+    if (!result.ok) return [];
+    return result.entries.filter(e => !e.isFile).map(e => e.name).sort();
+  } catch { return []; }
+}
+
 function findRecentJsonlFiles(root, daysBack = 7, limit = 20) {
   const files = [];
   const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - daysBack);
+  const _checkedFolders = [];
 
-  for (let offset = 0; offset <= daysBack; offset++) {
-    const day = new Date(now);
-    day.setDate(day.getDate() - offset);
+  // Walk actual directory tree: root/YYYY/MM/DD/
+  const years = listSubDirs(root);
+  for (let yi = years.length - 1; yi >= 0; yi--) {
+    const yPath = joinPath(root, years[yi]);
+    const months = listSubDirs(yPath);
+    for (let mi = months.length - 1; mi >= 0; mi--) {
+      const mPath = joinPath(yPath, months[mi]);
+      const days = listSubDirs(mPath);
+      for (let di = days.length - 1; di >= 0; di--) {
+        const folderDate = new Date(`${years[yi]}-${months[mi]}-${days[di]}T00:00:00`);
+        if (folderDate < cutoff) continue;
 
-    const y = day.getFullYear().toString();
-    const m = String(day.getMonth() + 1).padStart(2, '0');
-    const d = String(day.getDate()).padStart(2, '0');
-    const folder = joinPath(root, y, m, d);
+        const dPath = joinPath(mPath, days[di]);
+        try {
+          const result = hecaton.fs_read_dir({ path: dPath });
+          if (!result.ok) {
+            _checkedFolders.push(`${months[mi]}/${days[di]}:ERR`);
+            continue;
+          }
+          const entries = result.entries
+            .filter(e => e.isFile && e.name.endsWith('.jsonl'))
+            .map(e => ({
+              path: joinPath(dPath, e.name),
+              sortKey: e.mtimeMs || extractTimestampFromName(e.name),
+            }));
+          _checkedFolders.push(`${months[mi]}/${days[di]}:${entries.length}`);
+          files.push(...entries);
+        } catch {
+          _checkedFolders.push(`${months[mi]}/${days[di]}:CATCH`);
+        }
 
-    try {
-      const result = hecaton.fs_read_dir({ path: folder });
-      if (!result.ok) continue;
-      const entries = result.entries
-        .filter(e => e.isFile && e.name.endsWith('.jsonl'))
-        .map(e => ({
-          path: joinPath(folder, e.name),
-          mtime: e.mtimeMs || 0,
-        }));
-      files.push(...entries);
-    } catch { /* folder doesn't exist */ }
-
+        if (files.length >= limit) break;
+      }
+      if (files.length >= limit) break;
+    }
     if (files.length >= limit) break;
   }
 
-  // Sort by mtime descending (newest first)
-  files.sort((a, b) => b.mtime - a.mtime);
-  return files.slice(0, limit);
+  // Sort by sortKey descending (newest first)
+  files.sort((a, b) => b.sortKey - a.sortKey);
+  const result = files.slice(0, limit);
+  result._checkedFolders = _checkedFolders;
+  result._root = root;
+  result._now = now.toISOString();
+  return result;
 }
 
 function tailRead(filePath, maxBytes = 256 * 1024) {
@@ -145,6 +181,15 @@ function parseLatestRateLimits(root) {
             totalUsage: info.total_token_usage || null,
             lastUsage: info.last_token_usage || null,
             contextWindow: info.model_context_window || null,
+            _debug: {
+              sourceFile: file.path,
+              sortKey: file.sortKey,
+              fileCount: files.length,
+              allFiles: files.map(f => f.path.split('/').slice(-1)[0]),
+              root: files._root || '?',
+              now: files._now || '?',
+              folders: (files._checkedFolders || []).join(' '),
+            },
           };
 
           if (rl.primary) {
@@ -453,6 +498,18 @@ function render(state) {
       colors.label + 'Data: ' + ansi.reset +
       colors.value + formatTimestamp(d.timestamp) + ansi.reset
     );
+    // Debug info
+    if (d._debug) {
+      lines.push('');
+      lines.push('  ' + colors.title + ansi.bold + 'Debug' + ansi.reset);
+      lines.push('  ' + drawSeparator(width - 3));
+      lines.push('  ' + colors.dim + 'Root: ' + (d._debug.root || '?') + ansi.reset);
+      lines.push('  ' + colors.dim + 'Now: ' + (d._debug.now || '?') + ansi.reset);
+      lines.push('  ' + colors.dim + 'Folders: ' + (d._debug.folders || '?') + ansi.reset);
+      lines.push('  ' + colors.dim + 'Source: ' + (d._debug.sourceFile || '?') + ansi.reset);
+      lines.push('  ' + colors.dim + 'SortKey: ' + (d._debug.sortKey || '?') + '  Files: ' + (d._debug.fileCount || 0) + ansi.reset);
+    }
+
     lines.push('');
 
     // Keyboard
