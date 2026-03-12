@@ -13,9 +13,9 @@
  *   q / ESC - Close (handled by host)
  */
 
-const PLUGIN_VERSION = (() => {
+const PLUGIN_VERSION = await (async () => {
   try {
-    const result = hecaton.fs_read_file({ path: __dirname + '/plugin.json' });
+    const result = await hecaton.fs_read_file({ path: __dirname + '/plugin.json' });
     return result.ok ? JSON.parse(result.text).version : '1.0.0';
   } catch {
     return '1.0.0';
@@ -54,11 +54,11 @@ const PLUGIN_DIR_NAME = (() => {
   const parts = __dirname.replace(/\\/g, '/').split('/').filter(Boolean);
   return parts[parts.length - 1] || 'hecaton-plugin-codex-dashboard';
 })();
-const CONFIG_DIR = joinPath(hecaton.get_home_dir().home, '.hecaton', 'data', PLUGIN_DIR_NAME);
+const CONFIG_DIR = joinPath((await hecaton.get_home_dir()).home, '.hecaton', 'data', PLUGIN_DIR_NAME);
 const CONFIG_FILE = joinPath(CONFIG_DIR, 'config.json');
 
-let termCols = parseInt((hecaton.get_env({ name: 'HECA_COLS' }) || {}).value || '80', 10);
-let termRows = parseInt((hecaton.get_env({ name: 'HECA_ROWS' }) || {}).value || '24', 10);
+let termCols = parseInt((await hecaton.get_env({ name: 'HECA_COLS' })).value || '80', 10);
+let termRows = parseInt((await hecaton.get_env({ name: 'HECA_ROWS' })).value || '24', 10);
 let clickableAreas = [];
 let hoveredAreaIndex = -1;
 let currentButtons = [];
@@ -86,9 +86,9 @@ function colorForPercent(pct) {
   return colors.red;
 }
 
-function loadConfig() {
+async function loadConfig() {
   try {
-    const result = hecaton.fs_read_file({ path: CONFIG_FILE });
+    const result = await hecaton.fs_read_file({ path: CONFIG_FILE });
     if (!result.ok) return {};
     return JSON.parse(result.text);
   } catch {
@@ -96,25 +96,25 @@ function loadConfig() {
   }
 }
 
-function saveConfig(data) {
+async function saveConfig(data) {
   try {
-    hecaton.fs_mkdir({ path: CONFIG_DIR, recursive: true });
-    hecaton.fs_write_file({ path: CONFIG_FILE, text: JSON.stringify(data, null, 2) });
+    await hecaton.fs_mkdir({ path: CONFIG_DIR, recursive: true });
+    await hecaton.fs_write_file({ path: CONFIG_FILE, text: JSON.stringify(data, null, 2) });
   } catch {
     /* ignore config write errors */
   }
 }
 
-function getDefaultSessionsRoot() {
-  const envHome = (hecaton.get_env({ name: 'CODEX_HOME' }) || {}).value;
-  const homeDir = hecaton.get_home_dir().home;
+async function getDefaultSessionsRoot() {
+  const envHome = ((await hecaton.get_env({ name: 'CODEX_HOME' })) || {}).value;
+  const homeDir = (await hecaton.get_home_dir()).home;
   if (envHome) return joinPath(envHome, 'sessions');
   return joinPath(homeDir, '.codex', 'sessions');
 }
 
-function getSessionsRoot(config) {
+async function getSessionsRoot(config) {
   if (config && config.sessionRoot) return config.sessionRoot;
-  return getDefaultSessionsRoot();
+  return await getDefaultSessionsRoot();
 }
 
 function extractTimestampFromName(name) {
@@ -123,9 +123,9 @@ function extractTimestampFromName(name) {
   return new Date(`${match[1]}T${match[2]}:${match[3]}:${match[4]}Z`).getTime() || 0;
 }
 
-function listSubDirs(parentPath) {
+async function listSubDirs(parentPath) {
   try {
-    const result = hecaton.fs_read_dir({ path: parentPath });
+    const result = await hecaton.fs_read_dir({ path: parentPath });
     if (!result.ok) return [];
     return result.entries.filter((entry) => !entry.isFile).map((entry) => entry.name).sort();
   } catch {
@@ -137,27 +137,27 @@ function fileSortKey(entry, fallbackName) {
   return entry.mtimeMs || entry.modifiedTime || entry.lastWriteTime || extractTimestampFromName(fallbackName);
 }
 
-function findRecentJsonlFiles(root, daysBack, limit) {
+async function findRecentJsonlFiles(root, daysBack, limit) {
   const files = [];
   const checkedFolders = [];
   const now = new Date();
   const cutoff = new Date(now);
   cutoff.setDate(cutoff.getDate() - (daysBack || 7));
 
-  const years = listSubDirs(root);
+  const years = await listSubDirs(root);
   for (let yi = years.length - 1; yi >= 0; yi--) {
     const yPath = joinPath(root, years[yi]);
-    const months = listSubDirs(yPath);
+    const months = await listSubDirs(yPath);
     for (let mi = months.length - 1; mi >= 0; mi--) {
       const mPath = joinPath(yPath, months[mi]);
-      const days = listSubDirs(mPath);
+      const days = await listSubDirs(mPath);
       for (let di = days.length - 1; di >= 0; di--) {
         const folderDate = new Date(`${years[yi]}-${months[mi]}-${days[di]}T00:00:00`);
         if (folderDate < cutoff) continue;
 
         const dPath = joinPath(mPath, days[di]);
         try {
-          const result = hecaton.fs_read_dir({ path: dPath });
+          const result = await hecaton.fs_read_dir({ path: dPath });
           if (!result.ok) {
             checkedFolders.push(`${months[mi]}/${days[di]}:ERR`);
             continue;
@@ -189,9 +189,9 @@ function findRecentJsonlFiles(root, daysBack, limit) {
   return result;
 }
 
-function tailRead(filePath, maxBytes) {
+async function tailRead(filePath, maxBytes) {
   try {
-    const result = hecaton.fs_read_file({ path: filePath });
+    const result = await hecaton.fs_read_file({ path: filePath });
     if (!result.ok) return '';
     const text = result.text || '';
     const limit = maxBytes || 256 * 1024;
@@ -201,8 +201,8 @@ function tailRead(filePath, maxBytes) {
   }
 }
 
-function parseLatestRateLimits(root) {
-  const files = findRecentJsonlFiles(root, 7, 20);
+async function parseLatestRateLimits(root) {
+  const files = await findRecentJsonlFiles(root, 7, 20);
   if (files.length === 0) {
     return {
       _debug: {
@@ -215,7 +215,7 @@ function parseLatestRateLimits(root) {
 
   for (let fi = 0; fi < files.length; fi++) {
     const file = files[fi];
-    const content = tailRead(file.path);
+    const content = await tailRead(file.path);
     const lines = content.split('\n').filter((line) => line.trim());
 
     for (let i = lines.length - 1; i >= 0; i--) {
@@ -293,14 +293,14 @@ function parseLatestRateLimits(root) {
   };
 }
 
-function createWatchSignature(root) {
-  const files = findRecentJsonlFiles(root, 2, 6);
+async function createWatchSignature(root) {
+  const files = await findRecentJsonlFiles(root, 2, 6);
   if (!files.length) return `${root}|empty`;
   const signatures = [];
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     try {
-      const stat = hecaton.fs_stat({ path: file.path });
+      const stat = await hecaton.fs_stat({ path: file.path });
       signatures.push([
         file.path,
         stat && stat.ok !== false && stat.exists ? (stat.mtimeMs || stat.modifiedTime || stat.lastWriteTime || 0) : 0,
@@ -592,14 +592,14 @@ function handleRpcResponse(json) {
 }
 
 async function main() {
-  const config = loadConfig();
+  const config = await loadConfig();
   const state = {
     loading: true,
     error: null,
     data: null,
     startTime: Date.now(),
     minimized: false,
-    sessionRoot: getSessionsRoot(config),
+    sessionRoot: await getSessionsRoot(config),
     usingCustomRoot: !!config.sessionRoot,
     statusLine: '',
   };
@@ -617,16 +617,16 @@ async function main() {
     sendRpcNotify('set_title', { title: 'Codex: ' + baseName(state.sessionRoot) });
   }
 
-  function refresh() {
+  async function refresh() {
     state.loading = true;
     state.error = null;
     rerender();
 
     try {
-      state.data = parseLatestRateLimits(state.sessionRoot);
+      state.data = await parseLatestRateLimits(state.sessionRoot);
       state.loading = false;
       state.statusLine = 'Watching latest session files under ' + state.sessionRoot;
-      lastWatchSignature = createWatchSignature(state.sessionRoot);
+      lastWatchSignature = await createWatchSignature(state.sessionRoot);
       rerender();
     } catch (e) {
       state.loading = false;
@@ -636,14 +636,14 @@ async function main() {
     }
   }
 
-  function setRoot(nextRoot, customRoot) {
+  async function setRoot(nextRoot, customRoot) {
     state.sessionRoot = nextRoot;
     state.usingCustomRoot = !!customRoot;
     state.statusLine = customRoot ? 'Using custom session folder.' : 'Using default Codex session folder.';
-    saveConfig({ sessionRoot: customRoot ? nextRoot : '' });
+    await saveConfig({ sessionRoot: customRoot ? nextRoot : '' });
     lastWatchSignature = '';
     updateTitle();
-    refresh();
+    await refresh();
   }
 
   async function pickSessionFolder() {
@@ -651,29 +651,29 @@ async function main() {
     rerender();
     const result = await sendRpc('pick_folder', {});
     if (result && result.path) {
-      setRoot(result.path, true);
+      await setRoot(result.path, true);
       return;
     }
     state.statusLine = 'Folder selection cancelled.';
     rerender();
   }
 
-  function resetToDefaultRoot() {
-    setRoot(getDefaultSessionsRoot(), false);
+  async function resetToDefaultRoot() {
+    await setRoot(await getDefaultSessionsRoot(), false);
   }
 
   function setupWatcher() {
-    function checkForChanges() {
+    async function checkForChanges() {
       if (state.loading || state.minimized) return;
       try {
-        const nextSignature = createWatchSignature(state.sessionRoot);
+        const nextSignature = await createWatchSignature(state.sessionRoot);
         if (!lastWatchSignature) {
           lastWatchSignature = nextSignature;
           return;
         }
         if (nextSignature !== lastWatchSignature) {
           lastWatchSignature = nextSignature;
-          refresh();
+          await refresh();
         }
       } catch {
         /* ignore watcher errors */
