@@ -43,7 +43,7 @@ async function main() {
     error: null,
     data: null,
     startTime: Date.now(),
-    minimized: false,
+    minimized: hecaton.initialState?.minimized ?? false,
     sessionRoot: await configStore.getSessionsRoot(config),
     usingCustomRoot: !!config.sessionRoot,
     statusLine: '',
@@ -150,7 +150,7 @@ async function main() {
 
   rerender();
   updateTitle();
-  refresh();
+  if (!state.minimized) refresh();
   setupWatcher();
 
   try {
