@@ -150,7 +150,7 @@ async function main() {
 
   rerender();
   updateTitle();
-  if (!state.minimized) refresh();
+  refresh();
   setupWatcher();
 
   try {
