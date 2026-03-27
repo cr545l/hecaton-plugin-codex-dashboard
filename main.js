@@ -120,7 +120,7 @@ async function main() {
 
   function setupWatcher() {
     async function checkForChanges() {
-      if (state.loading || state.minimized) return;
+      if (state.loading) return;
       try {
         const nextSignature = await createWatchSignature(state.sessionRoot);
         if (!lastWatchSignature) {
@@ -138,7 +138,7 @@ async function main() {
 
     watchInterval = setInterval(checkForChanges, 3000);
     clockInterval = setInterval(() => {
-      if (!state.minimized) rerender();
+      rerender();
     }, 30000);
   }
 
