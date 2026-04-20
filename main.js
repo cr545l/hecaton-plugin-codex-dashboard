@@ -161,36 +161,21 @@ async function main() {
   process.stdin.resume();
   process.stdin.setEncoding('utf-8');
 
-  process.stdin.on('data', (key) => {
-    if (key.indexOf('__HECA_RPC__') !== -1) {
-      const segments = key.split('__HECA_RPC__');
-      for (let i = 0; i < segments.length; i++) {
-        const trimmed = segments[i].trim();
-        if (!trimmed) continue;
-        try {
-          const json = JSON.parse(trimmed);
-          if (json.id != null && (json.result || json.error)) {
-            rpc.handleRpcResponse(json);
-            continue;
-          }
-          if (json.method === 'resize' && json.params) {
-            renderer.setTerminalSize(json.params.cols, json.params.rows);
-            rerender();
-          } else if (json.method === 'minimize') {
-            state.minimized = true;
-            renderer.renderMinimized(state);
-          } else if (json.method === 'restore') {
-            state.minimized = false;
-            rerender();
-            refresh();
-          }
-        } catch {
-          /* ignore malformed segment */
-        }
-      }
-      return;
-    }
+  hecaton.on('resize', (params) => {
+    renderer.setTerminalSize(params.cols, params.rows);
+    rerender();
+  });
+  hecaton.on('minimize', () => {
+    state.minimized = true;
+    renderer.renderMinimized(state);
+  });
+  hecaton.on('restore', () => {
+    state.minimized = false;
+    rerender();
+    refresh();
+  });
 
+  process.stdin.on('data', (key) => {
     const mouseRegex = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
     let match;
     let hadMouse = false;
