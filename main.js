@@ -26,8 +26,8 @@ const pluginDirName = (() => {
 })();
 
 const configStore = await createConfigStore(pluginDirName);
-const initialCols = parseInt((await hecaton.get_env({ name: 'HECA_COLS' })).value || '80', 10);
-const initialRows = parseInt((await hecaton.get_env({ name: 'HECA_ROWS' })).value || '24', 10);
+const initialCols = parseInt((await hecaton.env.get({ name: 'HECA_COLS' })).value || '80', 10);
+const initialRows = parseInt((await hecaton.env.get({ name: 'HECA_ROWS' })).value || '24', 10);
 const renderer = createRenderer({
   pluginVersion,
   configFile: configStore.configFile,
@@ -59,7 +59,7 @@ async function main() {
   }
 
   function updateTitle() {
-    rpc.sendRpcNotify('set_title', { title: 'Codex: ' + baseName(state.sessionRoot) });
+    rpc.sendRpcNotify('window.set_title', { title: 'Codex: ' + baseName(state.sessionRoot) });
   }
 
   async function refresh() {
@@ -99,7 +99,7 @@ async function main() {
   async function pickSessionFolder() {
     state.statusLine = 'Waiting for folder picker...';
     rerender();
-    const result = await rpc.sendRpc('pick_folder', {});
+    const result = await rpc.sendRpc('picker.folder', {});
     if (result && result.path) {
       await setRoot(result.path, true);
       return;
@@ -161,15 +161,15 @@ async function main() {
   process.stdin.resume();
   process.stdin.setEncoding('utf-8');
 
-  hecaton.on('resize', (params) => {
+  hecaton.on('window_resized', (params) => {
     renderer.setTerminalSize(params.cols, params.rows);
     rerender();
   });
-  hecaton.on('minimize', () => {
+  hecaton.on('window_minimized', () => {
     state.minimized = true;
     renderer.renderMinimized(state);
   });
-  hecaton.on('restore', () => {
+  hecaton.on('window_restored', () => {
     state.minimized = false;
     rerender();
     refresh();
@@ -221,7 +221,7 @@ async function main() {
       case 'q':
       case 'Q':
         cleanup();
-        rpc.sendRpcNotify('close');
+        rpc.sendRpcNotify('window.close');
         break;
     }
   });
