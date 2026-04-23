@@ -16,7 +16,6 @@
 const { createConfigStore, loadPluginVersion } = require('./lib/config');
 const { baseName } = require('./lib/path');
 const { createRenderer } = require('./lib/render');
-const { createRpcClient } = require('./lib/rpc');
 const { createWatchSignature, parseLatestRateLimits } = require('./lib/session-data');
 
 const pluginVersion = await loadPluginVersion(__dirname);
@@ -34,8 +33,6 @@ const renderer = createRenderer({
   initialCols,
   initialRows,
 });
-const rpc = createRpcClient();
-
 async function main() {
   const config = await configStore.loadConfig();
   const state = {
@@ -59,7 +56,7 @@ async function main() {
   }
 
   function updateTitle() {
-    rpc.sendRpcNotify('window.set_title', { title: 'Codex: ' + baseName(state.sessionRoot) });
+    hecaton.window.set_title({ title: 'Codex: ' + baseName(state.sessionRoot) }).catch(() => null);
   }
 
   async function refresh() {
@@ -99,7 +96,7 @@ async function main() {
   async function pickSessionFolder() {
     state.statusLine = 'Waiting for folder picker...';
     rerender();
-    const result = await rpc.sendRpc('picker.folder', {});
+    const result = await hecaton.picker.folder({}).catch(() => null);
     if (result && result.path) {
       await setRoot(result.path, true);
       return;
@@ -221,7 +218,7 @@ async function main() {
       case 'q':
       case 'Q':
         cleanup();
-        rpc.sendRpcNotify('window.close');
+        hecaton.window.close().catch(() => null);
         break;
     }
   });
