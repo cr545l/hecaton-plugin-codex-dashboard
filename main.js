@@ -18,22 +18,23 @@ const { baseName } = require('./lib/path');
 const { createRenderer } = require('./lib/render');
 const { createWatchSignature, parseLatestRateLimits } = require('./lib/session-data');
 
-const pluginVersion = await loadPluginVersion(__dirname);
 const pluginDirName = (() => {
   const parts = __dirname.replace(/\\/g, '/').split('/').filter(Boolean);
   return parts[parts.length - 1] || 'hecaton-plugin-codex-dashboard';
 })();
 
-const configStore = await createConfigStore(pluginDirName);
-const initialCols = parseInt((await hecaton.env.get({ name: 'HECA_COLS' })).value || '80', 10);
-const initialRows = parseInt((await hecaton.env.get({ name: 'HECA_ROWS' })).value || '24', 10);
-const renderer = createRenderer({
-  pluginVersion,
-  configFile: configStore.configFile,
-  initialCols,
-  initialRows,
-});
 async function main() {
+  const pluginVersion = await loadPluginVersion(__dirname);
+  const configStore = await createConfigStore(pluginDirName);
+  const initialCols = parseInt(((await hecaton.env.get({ name: 'HECA_COLS' })) || {}).value || '80', 10);
+  const initialRows = parseInt(((await hecaton.env.get({ name: 'HECA_ROWS' })) || {}).value || '24', 10);
+  const renderer = createRenderer({
+    pluginVersion,
+    configFile: configStore.configFile,
+    initialCols,
+    initialRows,
+  });
+
   const config = await configStore.loadConfig();
   const state = {
     loading: true,
