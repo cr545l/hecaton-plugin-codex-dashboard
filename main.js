@@ -143,6 +143,7 @@ async function main() {
   function cleanup() {
     if (watchInterval) clearInterval(watchInterval);
     if (clockInterval) clearInterval(clockInterval);
+    renderer.clearTooltip();
     process.stdout.write(renderer.ansi.showCursor + renderer.ansi.reset + renderer.ansi.clear);
   }
 
@@ -169,6 +170,7 @@ async function main() {
   });
   hecaton.on('window_restored', () => {
     state.minimized = false;
+    renderer.clearTooltip();
     rerender();
     refresh();
   });
@@ -185,6 +187,10 @@ async function main() {
       const isRelease = match[4] === 'm';
 
       if ((cb & 32) !== 0) {
+        if (state.minimized) {
+          renderer.updateMinimizedTooltip(cx, cy);
+          continue;
+        }
         if (renderer.setHoverFromMouse(cx, cy)) rerender();
         continue;
       }
