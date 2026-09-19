@@ -1,9 +1,12 @@
 {
   "id": "dev.hecaton.codex-dashboard",
-  "name": "Codex Dashboard",
-  "version": "1.4.0",
+  "name": {
+    "en": "Codex Dashboard",
+    "ko": "Codex 대시보드"
+  },
+  "version": "1.5.0",
   "entry": "main.js",
-  "apiVersion": "1.1",
+  "apiVersion": "1.15",
   "overlay": {
     "mode": "floating",
     "width": "70%",
@@ -11,7 +14,24 @@
     "z_order": 50,
     "resizable": false,
     "bordered": false,
-    "minimized_label": "Codex",
+    "minimized_label": {
+      "en": "Codex",
+      "ko": "Codex"
+    },
     "minimized_label_color": "#968CE1"
+  },
+  "permission_usage_descriptions": {
+    "fs_read": {
+      "en": "Read the Codex session logs in the folder shown on the dashboard to display your remaining rate limits and token usage.",
+      "ko": "대시보드에 표시된 폴더의 Codex 세션 로그를 읽어 남은 사용 한도와 토큰 사용량을 보여 줍니다."
+    },
+    "fs_write": {
+      "en": "Save the session folder you picked so the dashboard reopens with the same folder.",
+      "ko": "선택한 세션 폴더를 저장해 다음에도 같은 폴더로 열리게 합니다."
+    },
+    "process_exec": {
+      "en": "Run tail (PowerShell Get-Content on Windows) to read the last lines of a session log, so a large log does not have to be loaded in full.",
+      "ko": "tail(Windows에서는 PowerShell Get-Content)을 실행해 세션 로그의 마지막 줄만 읽습니다. 큰 로그를 통째로 불러오지 않기 위한 것입니다."
+    }
   }
 }
