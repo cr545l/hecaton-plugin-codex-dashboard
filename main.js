@@ -13,6 +13,7 @@
  *   n / N   - Turn notifications on/off
  *   b / B   - Turn bookmarks on/off
  *   h / H   - Install/update Codex hooks (~/.codex/hooks.json)
+ *   s / S   - Retry a failed hook server
  *   q / ESC - Close (handled by host)
  *
  * 턴 북마크: Codex 훅 → lib/codex-hook-relay.js → 127.0.0.1:9219 → terminal.add_bookmark
@@ -127,6 +128,12 @@ async function main() {
     else await turnBookmarks.stop();
     const saved = await saveWholeConfig(permissions.createTracker());
     state.status = { key: saved ? (notificationsEnabled() ? 'status.notificationsOn' : 'status.notificationsOff') : 'status.configNotSaved' };
+    rerender();
+  }
+
+  async function retryHookServer() {
+    if (!(bookmarksEnabled() || notificationsEnabled()) || turnBookmarks.state.server !== 'failed') return;
+    await turnBookmarks.start();
     rerender();
   }
 
@@ -258,6 +265,7 @@ async function main() {
     if (action === 'toggle_bookmarks') await toggleBookmarks();
     if (action === 'toggle_notifications') await toggleNotifications();
     if (action === 'install_hooks') await installHooks();
+    if (action === 'retry_hook_server') await retryHookServer();
   }
 
   function setupWatcher() {
@@ -406,6 +414,10 @@ async function main() {
       case 'h':
       case 'H':
         installHooks();
+        break;
+      case 's':
+      case 'S':
+        retryHookServer();
         break;
       case 'q':
       case 'Q':

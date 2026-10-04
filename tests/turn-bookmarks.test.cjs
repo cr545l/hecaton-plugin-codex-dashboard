@@ -143,3 +143,60 @@ test('excerpt skips blank lines and code fences and caps the length', () => {
   assert.equal(excerpt('a\n\n```js\nb\n```\nc'), 'a\nc');
   assert.equal(excerpt('y'.repeat(400)).length, 300);
 });
+
+test('failed server can be retried, reclaiming the previous listener without duplicate starts', async () => {
+  let attempts = 0;
+  const stopped = [];
+  const saved = [];
+  global.hecaton = {
+    permissions: { query: async () => ({ state: 'granted' }) },
+    fs: {
+      read_file: async () => ({ content: '10' }),
+      write_file: async (p) => { saved.push(p.content); },
+    },
+    web: {
+      stop: async (p) => { stopped.push(p.server_id); },
+      serve: async () => ++attempts === 1
+        ? { ok: false, error_code: 'bind_failed', error: 'EADDRINUSE' }
+        : { ok: true, server_id: 11 },
+      set_http: async () => ({ ok: true }),
+    },
+  };
+  const tb = createTurnBookmarks({ serverIdFile: 'server.id', isEnabled: () => true });
+  await tb.start();
+  assert.equal(tb.state.server, 'failed');
+  assert.match(tb.state.serverError, /EADDRINUSE/);
+  const retry = tb.start();
+  assert.equal(tb.state.server, 'starting');
+  assert.equal(tb.start(), retry);
+  await retry;
+  assert.equal(attempts, 2);
+  assert.deepEqual(stopped, [10, 10]);
+  assert.deepEqual(saved, ['11']);
+  assert.equal(tb.state.server, 'running');
+  assert.equal(tb.state.serverError, null);
+  await tb.start();
+  assert.equal(attempts, 2);
+  await tb.dispose();
+  assert.equal(stopped.at(-1), 11);
+});
+
+test('retry respects a denied server permission and works after it is granted', async () => {
+  let allowed = false;
+  let served = 0;
+  global.hecaton = {
+    permissions: { query: async () => ({ state: allowed ? 'granted' : 'denied' }) },
+    web: {
+      serve: async () => { served++; return { ok: true, server_id: 12 }; },
+      set_http: async () => ({ ok: true }),
+    },
+  };
+  const tb = createTurnBookmarks({ isEnabled: () => true });
+  await tb.start();
+  assert.equal(served, 0);
+  assert.equal(tb.state.serverError, 'access_denied');
+  allowed = true;
+  await tb.start();
+  assert.equal(served, 1);
+  assert.equal(tb.state.server, 'running');
+});

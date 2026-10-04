@@ -30,6 +30,8 @@ test('server failure precedes cached usage and exposes the port and reason on ho
   h.renderer.updateMinimizedTooltip(2, 1);
   assert.match(h.tooltip(), /9219/);
   assert.match(h.tooltip(), /EADDRINUSE/);
+  assert.match(h.tooltip(), /other apps or duplicate dashboards/);
+  assert.match(h.tooltip(), /\[s\] Retry server/);
   h.state.bookmarks.runtime = { server: 'running' };
   assert.doesNotMatch(h.render(), /failed/);
   assert.equal(h.tooltip(), '');
@@ -62,6 +64,15 @@ test('scan and settings failures stay visible even with usage data', () => {
   h.state.status = null;
   h.state.deniedPermissions = ['fs_read'];
   assert.match(h.render(), /^! Permission blocked/);
+});
+
+test('server permission failure explains where to allow access and how to retry', () => {
+  const h = harness();
+  h.state.bookmarks.runtime = { server: 'failed', serverError: 'access_denied' };
+  h.render();
+  h.renderer.updateMinimizedTooltip(2, 1);
+  assert.match(h.tooltip(), /Settings > Plugins/);
+  assert.match(h.tooltip(), /\[s\] Retry server/);
 });
 
 test('Korean warnings fit narrow bars while hover preserves complete details', () => {
