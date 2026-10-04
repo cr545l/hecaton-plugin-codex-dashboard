@@ -16,8 +16,8 @@
  *   s / S   - Retry a failed hook server
  *   q / ESC - Close (handled by host)
  *
- * 턴 북마크: Codex 훅 → lib/codex-hook-relay.js → 127.0.0.1:9219 → terminal.add_bookmark
- *            (호스트 API 1.21). 구성은 lib/codex-hooks.js · lib/turn-bookmarks.js 머리 주석.
+ * Codex 훅 → lib/codex-hook-relay.js → service.js (127.0.0.1:9219) → 북마크·알림.
+ * 창은 serviceChannel로 상태를 구독하며 서버를 직접 시작하거나 종료하지 않는다.
  *
  * i18n:      locale/*.json + lib/i18n.js. 표시 언어는 호스트를 따르고 locale_changed 로 바뀐다.
  * 권한:      plugin.json 의 permission_usage_descriptions 가 프롬프트 문구, lib/permissions.js 가
@@ -27,10 +27,9 @@
 const i18n = require('./lib/i18n');
 const permissions = require('./lib/permissions');
 const { createConfigStore, loadPluginVersion } = require('./lib/config');
-const { baseName, joinPath } = require('./lib/path');
+const { baseName } = require('./lib/path');
 const codexHooks = require('./lib/codex-hooks');
-const { createTurnBookmarks } = require('./lib/turn-bookmarks');
-const { createTurnNotifications } = require('./lib/turn-notifications');
+const { createHookServiceClient } = require('./lib/hook-service-client');
 const { createRenderer } = require('./lib/render');
 const { createWatchSignature, parseLatestRateLimits } = require('./lib/session-data');
 
@@ -78,21 +77,30 @@ async function main() {
   // 북마크와 알림 중 하나라도 켜져 있으면 훅 서버를 유지한다.
   const bookmarksEnabled = () => config.bookmarks !== false;
   const notificationsEnabled = () => config.notifications !== false;
-  const notifications = createTurnNotifications({ isEnabled: notificationsEnabled, onChange: () => rerender() });
-  state.notifications = { enabled: notificationsEnabled(), runtime: notifications.state };
-  const turnBookmarks = createTurnBookmarks({
-    notifications,
-    serverIdFile: joinPath(configStore.configDir, 'hook-server.id'),
-    isEnabled: bookmarksEnabled,
-    onChange: () => rerender(),
-  });
+  state.notifications = { enabled: notificationsEnabled(), runtime: { error: null } };
   state.bookmarks = {
     enabled: bookmarksEnabled(),
     hooks: 'unknown',
     hooksPath: '',
     port: codexHooks.PORT,
-    runtime: turnBookmarks.state,
+    runtime: { server: 'starting', serverError: null, count: 0, last: null },
   };
+  const hookService = createHookServiceClient({
+    onState: (snapshot) => {
+      state.bookmarks.runtime = snapshot.bookmarks;
+      state.notifications.runtime = snapshot.notifications;
+      config.bookmarks = state.bookmarks.enabled = snapshot.enabled.bookmarks;
+      config.notifications = state.notifications.enabled = snapshot.enabled.notifications;
+      rerender();
+    },
+    onError: (error, detail) => {
+      state.bookmarks.runtime = {
+        ...state.bookmarks.runtime, server: 'failed',
+        serverError: 'service: ' + error + (detail && detail !== error ? ' — ' + detail : ''),
+      };
+      rerender();
+    },
+  });
 
   async function refreshHookStatus() {
     const s = await codexHooks.status(__dirname).catch(() => null);
@@ -109,11 +117,11 @@ async function main() {
   }
 
   async function toggleBookmarks() {
-    config.bookmarks = !bookmarksEnabled();
+    const enabled = !bookmarksEnabled();
+    config.bookmarks = enabled;
     state.bookmarks.enabled = bookmarksEnabled();
-    if (state.bookmarks.enabled || notificationsEnabled()) await turnBookmarks.start();
-    else await turnBookmarks.stop();
     const saved = await saveWholeConfig(permissions.createTracker());
+    await hookService.request('configure', { bookmarks: enabled });
     state.status = saved
       ? { key: state.bookmarks.enabled ? 'status.bookmarksOn' : 'status.bookmarksOff' }
       : { key: 'status.configNotSaved' };
@@ -121,19 +129,18 @@ async function main() {
   }
 
   async function toggleNotifications() {
-    config.notifications = !notificationsEnabled();
+    const enabled = !notificationsEnabled();
+    config.notifications = enabled;
     state.notifications.enabled = notificationsEnabled();
-    if (notificationsEnabled()) await notifications.prepare();
-    if (bookmarksEnabled() || notificationsEnabled()) await turnBookmarks.start();
-    else await turnBookmarks.stop();
     const saved = await saveWholeConfig(permissions.createTracker());
+    await hookService.request('configure', { notifications: enabled });
     state.status = { key: saved ? (notificationsEnabled() ? 'status.notificationsOn' : 'status.notificationsOff') : 'status.configNotSaved' };
     rerender();
   }
 
   async function retryHookServer() {
-    if (!(bookmarksEnabled() || notificationsEnabled()) || turnBookmarks.state.server !== 'failed') return;
-    await turnBookmarks.start();
+    if (!(bookmarksEnabled() || notificationsEnabled()) || state.bookmarks.runtime.server !== 'failed') return;
+    await hookService.request('retry');
     rerender();
   }
 
@@ -295,22 +302,20 @@ async function main() {
   function cleanup() {
     if (watchInterval) clearInterval(watchInterval);
     if (clockInterval) clearInterval(clockInterval);
-    turnBookmarks.dispose().catch(() => null);
+    hookService.close().catch(() => null);
     renderer.clearTooltip();
     process.stdout.write(renderer.ansi.showCursor + renderer.ansi.reset + renderer.ansi.clear);
   }
 
-  // 훅 이벤트는 창이 최소화돼 있어도 받는다 — 서버를 먼저 등록해 둔다.
-  hecaton.on('http_request_received', (params) => turnBookmarks.onHttpRequest(params));
-  hecaton.on('shutdown', () => { turnBookmarks.dispose().catch(() => null); });
+  // UI 종료는 연결만 해제한다. 훅 서버는 공유 서비스가 소유한다.
+  hecaton.on('shutdown', () => { hookService.close().catch(() => null); });
 
   rerender();
   updateTitle();
   refresh();
   setupWatcher();
   refreshHookStatus();
-  if (notificationsEnabled()) await notifications.prepare();
-  if (bookmarksEnabled() || notificationsEnabled()) turnBookmarks.start();
+  hookService.request();
 
   // 호스트가 실제로 고른 태그를 확인만 한다 — initialState 로 이미 정해져 있으므로
   // 여기서 바뀌는 경우는 드물다. 1.11 미만 호스트면 조용히 영어로 남는다.

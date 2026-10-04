@@ -75,6 +75,20 @@ test('server permission failure explains where to allow access and how to retry'
   assert.match(h.tooltip(), /\[s\] Retry server/);
 });
 
+test('missing service explains close/reopen without mislabeling it as a port or permission failure', () => {
+  const h = harness();
+  h.state.bookmarks.runtime = { server: 'failed', serverError: 'service: no_service — plugin.json declares no service' };
+  assert.match(h.render(), /^! Service connection failed/);
+  h.renderer.updateMinimizedTooltip(2, 1);
+  assert.match(h.tooltip(), /Close this window and open it from the plugin list/);
+  assert.match(h.tooltip(), /plugin.json declares no service/);
+  assert.doesNotMatch(h.tooltip(), /Allow service execution|Retry server|9219/);
+  h.state.bookmarks.runtime.serverError = 'service: permission_denied';
+  h.render();
+  h.renderer.updateMinimizedTooltip(2, 1);
+  assert.match(h.tooltip(), /Allow service execution/);
+});
+
 test('Korean warnings fit narrow bars while hover preserves complete details', () => {
   i18n.setLocale('ko');
   try {
