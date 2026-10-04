@@ -40,6 +40,10 @@
     "terminal_status": {
       "en": "Bookmark the spot in the terminal where Codex finished a turn or stopped for your approval. This does not read the screen or send input.",
       "ko": "Codex 가 작업을 마치거나 승인을 기다리며 멈춘 지점을 그 터미널에 북마크로 남깁니다. 화면을 읽거나 입력을 보내지 않습니다."
+    },
+    "notification": {
+      "en": "Notify you when Codex finishes a response or needs your approval.",
+      "ko": "Codex가 응답을 마치거나 승인을 기다릴 때 알림을 보냅니다."
     }
   }
 }

@@ -10,6 +10,7 @@
  *   r / R   - Refresh data
  *   p / P   - Pick session folder
  *   d / D   - Reset to default session folder
+ *   n / N   - Turn notifications on/off
  *   b / B   - Turn bookmarks on/off
  *   h / H   - Install/update Codex hooks (~/.codex/hooks.json)
  *   q / ESC - Close (handled by host)
@@ -28,6 +29,7 @@ const { createConfigStore, loadPluginVersion } = require('./lib/config');
 const { baseName, joinPath } = require('./lib/path');
 const codexHooks = require('./lib/codex-hooks');
 const { createTurnBookmarks } = require('./lib/turn-bookmarks');
+const { createTurnNotifications } = require('./lib/turn-notifications');
 const { createRenderer } = require('./lib/render');
 const { createWatchSignature, parseLatestRateLimits } = require('./lib/session-data');
 
@@ -72,9 +74,13 @@ async function main() {
   let watchInterval = null;
   let clockInterval = null;
 
-  // 턴 북마크 — 기본은 켜짐. 끄면 훅 서버도 내린다(훅은 남아 있어도 받을 곳이 없어 조용히 끝난다).
+  // 북마크와 알림 중 하나라도 켜져 있으면 훅 서버를 유지한다.
   const bookmarksEnabled = () => config.bookmarks !== false;
+  const notificationsEnabled = () => config.notifications !== false;
+  const notifications = createTurnNotifications({ isEnabled: notificationsEnabled, onChange: () => rerender() });
+  state.notifications = { enabled: notificationsEnabled(), runtime: notifications.state };
   const turnBookmarks = createTurnBookmarks({
+    notifications,
     serverIdFile: joinPath(configStore.configDir, 'hook-server.id'),
     isEnabled: bookmarksEnabled,
     onChange: () => rerender(),
@@ -104,12 +110,23 @@ async function main() {
   async function toggleBookmarks() {
     config.bookmarks = !bookmarksEnabled();
     state.bookmarks.enabled = bookmarksEnabled();
-    if (state.bookmarks.enabled) await turnBookmarks.start();
+    if (state.bookmarks.enabled || notificationsEnabled()) await turnBookmarks.start();
     else await turnBookmarks.stop();
     const saved = await saveWholeConfig(permissions.createTracker());
     state.status = saved
       ? { key: state.bookmarks.enabled ? 'status.bookmarksOn' : 'status.bookmarksOff' }
       : { key: 'status.configNotSaved' };
+    rerender();
+  }
+
+  async function toggleNotifications() {
+    config.notifications = !notificationsEnabled();
+    state.notifications.enabled = notificationsEnabled();
+    if (notificationsEnabled()) await notifications.prepare();
+    if (bookmarksEnabled() || notificationsEnabled()) await turnBookmarks.start();
+    else await turnBookmarks.stop();
+    const saved = await saveWholeConfig(permissions.createTracker());
+    state.status = { key: saved ? (notificationsEnabled() ? 'status.notificationsOn' : 'status.notificationsOff') : 'status.configNotSaved' };
     rerender();
   }
 
@@ -239,6 +256,7 @@ async function main() {
     if (action === 'pick_folder') await pickSessionFolder();
     if (action === 'default_root') await resetToDefaultRoot();
     if (action === 'toggle_bookmarks') await toggleBookmarks();
+    if (action === 'toggle_notifications') await toggleNotifications();
     if (action === 'install_hooks') await installHooks();
   }
 
@@ -283,7 +301,8 @@ async function main() {
   refresh();
   setupWatcher();
   refreshHookStatus();
-  if (bookmarksEnabled()) turnBookmarks.start();
+  if (notificationsEnabled()) await notifications.prepare();
+  if (bookmarksEnabled() || notificationsEnabled()) turnBookmarks.start();
 
   // 호스트가 실제로 고른 태그를 확인만 한다 — initialState 로 이미 정해져 있으므로
   // 여기서 바뀌는 경우는 드물다. 1.11 미만 호스트면 조용히 영어로 남는다.
@@ -375,6 +394,10 @@ async function main() {
       case 'd':
       case 'D':
         resetToDefaultRoot();
+        break;
+      case 'n':
+      case 'N':
+        toggleNotifications();
         break;
       case 'b':
       case 'B':
