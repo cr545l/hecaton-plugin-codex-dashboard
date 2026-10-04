@@ -10,7 +10,12 @@
  *   r / R   - Refresh data
  *   p / P   - Pick session folder
  *   d / D   - Reset to default session folder
+ *   b / B   - Turn bookmarks on/off
+ *   h / H   - Install/update Codex hooks (~/.codex/hooks.json)
  *   q / ESC - Close (handled by host)
+ *
+ * 턴 북마크: Codex 훅 → lib/codex-hook-relay.js → 127.0.0.1:9219 → terminal.add_bookmark
+ *            (호스트 API 1.21). 구성은 lib/codex-hooks.js · lib/turn-bookmarks.js 머리 주석.
  *
  * i18n:      locale/*.json + lib/i18n.js. 표시 언어는 호스트를 따르고 locale_changed 로 바뀐다.
  * 권한:      plugin.json 의 permission_usage_descriptions 가 프롬프트 문구, lib/permissions.js 가
@@ -20,7 +25,9 @@
 const i18n = require('./lib/i18n');
 const permissions = require('./lib/permissions');
 const { createConfigStore, loadPluginVersion } = require('./lib/config');
-const { baseName } = require('./lib/path');
+const { baseName, joinPath } = require('./lib/path');
+const codexHooks = require('./lib/codex-hooks');
+const { createTurnBookmarks } = require('./lib/turn-bookmarks');
 const { createRenderer } = require('./lib/render');
 const { createWatchSignature, parseLatestRateLimits } = require('./lib/session-data');
 
@@ -64,6 +71,56 @@ async function main() {
   let lastWatchSignature = '';
   let watchInterval = null;
   let clockInterval = null;
+
+  // 턴 북마크 — 기본은 켜짐. 끄면 훅 서버도 내린다(훅은 남아 있어도 받을 곳이 없어 조용히 끝난다).
+  const bookmarksEnabled = () => config.bookmarks !== false;
+  const turnBookmarks = createTurnBookmarks({
+    serverIdFile: joinPath(configStore.configDir, 'hook-server.id'),
+    isEnabled: bookmarksEnabled,
+    onChange: () => rerender(),
+  });
+  state.bookmarks = {
+    enabled: bookmarksEnabled(),
+    hooks: 'unknown',
+    hooksPath: '',
+    port: codexHooks.PORT,
+    runtime: turnBookmarks.state,
+  };
+
+  async function refreshHookStatus() {
+    const s = await codexHooks.status(__dirname).catch(() => null);
+    if (s) {
+      state.bookmarks.hooks = s.state;
+      state.bookmarks.hooksPath = s.path;
+    }
+    rerender();
+  }
+
+  // 설정은 통째로 저장한다 — 폴더 선택과 북마크 토글이 서로의 값을 지우지 않게.
+  function saveWholeConfig(tracker) {
+    return configStore.saveConfig({ ...config }, tracker);
+  }
+
+  async function toggleBookmarks() {
+    config.bookmarks = !bookmarksEnabled();
+    state.bookmarks.enabled = bookmarksEnabled();
+    if (state.bookmarks.enabled) await turnBookmarks.start();
+    else await turnBookmarks.stop();
+    const saved = await saveWholeConfig(permissions.createTracker());
+    state.status = saved
+      ? { key: state.bookmarks.enabled ? 'status.bookmarksOn' : 'status.bookmarksOff' }
+      : { key: 'status.configNotSaved' };
+    rerender();
+  }
+
+  async function installHooks() {
+    const writeTracker = permissions.createTracker();
+    const result = await codexHooks.install(__dirname, writeTracker);
+    state.status = result.ok
+      ? { key: 'status.hooksInstalled', args: { path: result.path } }
+      : { key: result.error === 'access_denied' ? 'permission.denied.fs_write' : 'status.hooksFailed', args: { error: result.error || '' } };
+    await refreshHookStatus();
+  }
 
   function rerender() {
     if (state.minimized) renderer.renderMinimized(state);
@@ -143,7 +200,8 @@ async function main() {
     // 저장 판정은 스캔과 따로 모은다 — 곧 부를 refresh() 가 시작하면서 수집기를 비우므로
     // 같은 수집기를 쓰면 방금 받은 쓰기 거부가 지워진다.
     const writeTracker = permissions.createTracker();
-    const saved = await configStore.saveConfig({ sessionRoot: customRoot ? nextRoot : '' }, writeTracker);
+    config.sessionRoot = customRoot ? nextRoot : '';
+    const saved = await saveWholeConfig(writeTracker);
     lastWatchSignature = '';
     updateTitle();
     await refresh();
@@ -180,6 +238,8 @@ async function main() {
     if (action === 'refresh') await refresh();
     if (action === 'pick_folder') await pickSessionFolder();
     if (action === 'default_root') await resetToDefaultRoot();
+    if (action === 'toggle_bookmarks') await toggleBookmarks();
+    if (action === 'install_hooks') await installHooks();
   }
 
   function setupWatcher() {
@@ -209,14 +269,21 @@ async function main() {
   function cleanup() {
     if (watchInterval) clearInterval(watchInterval);
     if (clockInterval) clearInterval(clockInterval);
+    turnBookmarks.dispose().catch(() => null);
     renderer.clearTooltip();
     process.stdout.write(renderer.ansi.showCursor + renderer.ansi.reset + renderer.ansi.clear);
   }
+
+  // 훅 이벤트는 창이 최소화돼 있어도 받는다 — 서버를 먼저 등록해 둔다.
+  hecaton.on('http_request_received', (params) => turnBookmarks.onHttpRequest(params));
+  hecaton.on('shutdown', () => { turnBookmarks.dispose().catch(() => null); });
 
   rerender();
   updateTitle();
   refresh();
   setupWatcher();
+  refreshHookStatus();
+  if (bookmarksEnabled()) turnBookmarks.start();
 
   // 호스트가 실제로 고른 태그를 확인만 한다 — initialState 로 이미 정해져 있으므로
   // 여기서 바뀌는 경우는 드물다. 1.11 미만 호스트면 조용히 영어로 남는다.
@@ -308,6 +375,14 @@ async function main() {
       case 'd':
       case 'D':
         resetToDefaultRoot();
+        break;
+      case 'b':
+      case 'B':
+        toggleBookmarks();
+        break;
+      case 'h':
+      case 'H':
+        installHooks();
         break;
       case 'q':
       case 'Q':
