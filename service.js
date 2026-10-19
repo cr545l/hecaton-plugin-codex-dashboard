@@ -3,6 +3,7 @@
 const i18n = require('./lib/i18n');
 const { createConfigStore } = require('./lib/config');
 const { PROTOCOL, createHookService } = require('./lib/hook-service');
+const { createNotificationDelivery } = require('./lib/notification-delivery');
 
 async function main() {
   i18n.setLocale(hecaton.initialState?.locale);
@@ -13,7 +14,9 @@ async function main() {
     protocol: PROTOCOL,
     onRequest: (_link, method, params) => core.request(method, params),
   });
-  core = createHookService({ config, onChange: (state) => host.broadcast('state', state).catch(() => {}) });
+  const delivery = createNotificationDelivery(host);
+  core = createHookService({ config, sendNotification: delivery.send,
+    onChange: (state) => host.broadcast('state', state).catch(() => {}) });
   hecaton.on('http_request_received', core.onHttpRequest);
   hecaton.on('locale_changed', (params) => i18n.setLocale(params?.locale));
   hecaton.onShutdown(() => core.shutdown(), { graceMs: 4000 });

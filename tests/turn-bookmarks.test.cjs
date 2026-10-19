@@ -58,7 +58,7 @@ test('relay forwards the hook input with the terminal id and prints nothing', as
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
-  const hook = { session_id: 's1', model: 'gpt-x', last_assistant_message: 'x'.repeat(5000), transcript_path: '/secret' };
+  const hook = { session_id: 's1', model: 'gpt-x', last_assistant_message: 'x'.repeat(20000) + 'The real ending.', transcript_path: '/secret' };
   const result = await runRelay(port, JSON.stringify(hook), { CONSOLE_TERMINAL_ID: '42' });
   server.close();
   server.closeAllConnections();
@@ -70,7 +70,8 @@ test('relay forwards the hook input with the terminal id and prints nothing', as
   assert.equal(received.body.event, 'Stop');
   assert.equal(received.body.terminal_id, '42');
   assert.equal(received.body.hook.model, 'gpt-x');
-  assert.equal(received.body.hook.last_assistant_message.length, 2000);
+  assert.equal(received.body.hook.last_assistant_message.length, 16 * 1024);
+  assert.equal(received.body.hook.last_assistant_message_tail, hook.last_assistant_message.slice(-512));
   assert.equal('transcript_path' in received.body.hook, false);
 });
 
@@ -114,7 +115,7 @@ test('Stop and PermissionRequest bookmark the hooked terminal with a detailed co
   assert.match(lines[0], /^response complete at \d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/);
   assert.equal(lines[1], 'Model: gpt-x');
   assert.match(lines[2], /^Turn time: \d+s$/);
-  assert.deepEqual(lines.slice(4), ['Fixed the bug.', 'Ran tests.', 'All green.', '…']);
+  assert.deepEqual(lines.slice(4), ['Reply:', '```', 'code', '```', 'Fixed the bug.', '', 'Ran tests.', 'All green.', 'More.']);
   assert.equal(tb.state.count, 2);
   assert.equal(tb.state.last.key, 'Stop');
 });

@@ -4,7 +4,7 @@
     "en": "Codex Dashboard",
     "ko": "Codex 대시보드"
   },
-  "version": "1.5.0",
+  "version": "1.6.1",
   "entry": "main.js",
   "apiVersion": "1.21",
   "service": {
@@ -46,8 +46,12 @@
       "ko": "이 컴퓨터의 Codex 훅이 턴 종료를 대시보드에 알릴 수 있도록 127.0.0.1의 9219 포트에서 대기합니다. 로컬 연결만 받습니다."
     },
     "terminal_status": {
-      "en": "Bookmark the spot in the terminal where Codex finished a turn or stopped for your approval. This does not read the screen or send input.",
-      "ko": "Codex 가 작업을 마치거나 승인을 기다리며 멈춘 지점을 그 터미널에 북마크로 남깁니다. 화면을 읽거나 입력을 보내지 않습니다."
+      "en": "Bookmark the reply in the terminal where Codex finished a turn, including its text in the comment, or mark the spot where it stopped for your approval.",
+      "ko": "Codex가 완료한 응답 범위를 해당 터미널에 북마크로 남기고 코멘트에 본문을 저장하며, 승인을 기다리며 멈춘 지점도 표시합니다."
+    },
+    "cross_terminal": {
+      "en": "Read the terminal screen when Codex finishes a response so its bookmark covers the reply instead of the input box and its comment includes the response text.",
+      "ko": "Codex 응답이 완료됐을 때 해당 터미널 화면을 읽어 북마크가 입력창 대신 응답 본문 범위를 가리키고 코멘트에 본문을 담도록 합니다."
     },
     "notification": {
       "en": "Notify you when Codex finishes a response or needs your approval.",

@@ -46,6 +46,27 @@ test('bookmark denial does not suppress notifications', async () => {
   assert.equal(h.calls.length, 2);
 });
 
+test('a new prompt allows another completion notification within the dedupe window', async () => {
+  const h = setup();
+  await h.event('UserPromptSubmit');
+  await h.event('Stop');
+  await h.event('Stop');
+  await h.event('UserPromptSubmit');
+  await h.event('Stop');
+  assert.equal(h.calls.length, 2);
+});
+
+test('a failed notification can be retried immediately after a window becomes available', async () => {
+  let available = false;
+  const h = setup({ send: () => available ? { ok: true } : { ok: false, error_code: 'no_notification_window' } });
+  await h.event('Stop');
+  assert.equal(h.notifications.state.error, 'no_notification_window');
+  available = true;
+  await h.event('Stop');
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.notifications.state.error, null);
+});
+
 test('completion includes a short plain-text response and approval includes only the tool', async () => {
   const h = setup();
   await h.event('Stop', '42', { last_assistant_message: '\n```js\nraw output\n```\n**Fixed login.**\n\n- Tests passed.\n[Details](https://example.com)' });
