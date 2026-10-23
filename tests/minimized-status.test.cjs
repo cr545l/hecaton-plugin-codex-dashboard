@@ -66,6 +66,19 @@ test('scan and settings failures stay visible even with usage data', () => {
   assert.match(h.render(), /^! Permission blocked/);
 });
 
+test('mapping failures show the hook id and ambiguity once for both features', () => {
+  const h = harness();
+  h.state.bookmarks.runtime.targetError = { key: 'terminal.error.ambiguous', args: { terminal: 4901 } };
+  assert.match(h.render(), /^! Terminal mapping failed/);
+  h.renderer.updateMinimizedTooltip(2, 1);
+  assert.match(h.tooltip(), /T4901.*multiple shells/);
+  assert.match(h.tooltip(), /\[l\]/);
+  h.state.bookmarks.enabled = false;
+  assert.match(h.render(), /^! Terminal mapping failed/);
+  h.state.notifications.enabled = false;
+  assert.doesNotMatch(h.render(), /mapping failed/);
+});
+
 test('server permission failure explains where to allow access and how to retry', () => {
   const h = harness();
   h.state.bookmarks.runtime = { server: 'failed', serverError: 'access_denied' };

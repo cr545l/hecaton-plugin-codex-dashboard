@@ -4,18 +4,21 @@ const i18n = require('./lib/i18n');
 const { createConfigStore } = require('./lib/config');
 const { PROTOCOL, createHookService } = require('./lib/hook-service');
 const { createNotificationDelivery } = require('./lib/notification-delivery');
+const { joinPath } = require('./lib/path');
 
 async function main() {
   i18n.setLocale(hecaton.initialState?.locale);
   const store = await createConfigStore('dev.hecaton.codex-dashboard');
   const config = await store.loadConfig();
+  const dataDir = (await hecaton.env.get({ name: 'HECA_PLUGIN_DATA_DIR' }).catch(() => null))?.value || store.configDir;
   let core;
   const host = hecaton.serviceHost({
     protocol: PROTOCOL,
     onRequest: (_link, method, params) => core.request(method, params),
   });
-  const delivery = createNotificationDelivery(host);
+  const delivery = createNotificationDelivery(host, { log: (...args) => core?.log(...args) });
   core = createHookService({ config, sendNotification: delivery.send,
+    logFile: joinPath(dataDir, 'hook-diagnostics.json'),
     onChange: (state) => host.broadcast('state', state).catch(() => {}) });
   hecaton.on('http_request_received', core.onHttpRequest);
   hecaton.on('locale_changed', (params) => i18n.setLocale(params?.locale));

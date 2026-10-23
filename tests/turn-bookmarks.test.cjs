@@ -69,6 +69,8 @@ test('relay forwards the hook input with the terminal id and prints nothing', as
   assert.equal(received.body.client, 'codex');
   assert.equal(received.body.event, 'Stop');
   assert.equal(received.body.terminal_id, '42');
+  assert.ok(Number.isInteger(received.body.relay.pid) && received.body.relay.pid > 0);
+  assert.equal(received.body.relay.parent_pid, process.pid);
   assert.equal(received.body.hook.model, 'gpt-x');
   assert.equal(received.body.hook.last_assistant_message.length, 16 * 1024);
   assert.equal(received.body.hook.last_assistant_message_tail, hook.last_assistant_message.slice(-512));
@@ -137,6 +139,22 @@ test('a refused or missing API turns bookmarks off instead of retrying', async (
   tb = createTurnBookmarks({ isEnabled: () => false });
   await tb.handle({ client: 'codex', event: 'Stop', terminal_id: '7' });
   assert.equal(calls.length, 0, 'the toggle is respected');
+});
+
+test('a terminal lookup failure does not dedupe the immediate retry after recovery', async () => {
+  let available = false;
+  const calls = mockHost({ addBookmark: () => available
+    ? { ok: true } : { ok: false, error_code: 'not_found' } });
+  const tb = createTurnBookmarks({ isEnabled: () => true });
+  const event = { client: 'codex', event: 'Stop', terminal_id: '42' };
+  await tb.handle(event);
+  assert.equal(tb.state.lastError, 'not_found');
+  available = true;
+  await tb.handle(event);
+  await tb.handle(event);
+  assert.equal(calls.length, 2);
+  assert.equal(tb.state.count, 1);
+  assert.equal(tb.state.lastError, null);
 });
 
 test('excerpt skips blank lines and code fences and caps the length', () => {

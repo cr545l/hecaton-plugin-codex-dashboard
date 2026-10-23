@@ -68,6 +68,9 @@ async function main() {
     status: null,
     deniedPermissions: [],
     permissionStates: {},
+    diagnostics: { entries: [] },
+    showDiagnostics: false,
+    logErrorsOnly: false,
   };
 
   let lastWatchSignature = '';
@@ -89,6 +92,7 @@ async function main() {
     onState: (snapshot) => {
       state.bookmarks.runtime = snapshot.bookmarks;
       state.notifications.runtime = snapshot.notifications;
+      if (snapshot.diagnostics) state.diagnostics = snapshot.diagnostics;
       config.bookmarks = state.bookmarks.enabled = snapshot.enabled.bookmarks;
       config.notifications = state.notifications.enabled = snapshot.enabled.notifications;
       rerender();
@@ -266,6 +270,26 @@ async function main() {
   }
 
   async function runAction(action) {
+    if (action === 'toggle_diagnostics') {
+      state.showDiagnostics = !state.showDiagnostics;
+      renderer.scrollDiagnostics(-Infinity);
+      renderer.clearTooltip();
+      rerender();
+      if (state.showDiagnostics) await hookService.request('diagnostics');
+      return;
+    }
+    if (action === 'filter_diagnostics') {
+      state.logErrorsOnly = !state.logErrorsOnly;
+      renderer.scrollDiagnostics(-Infinity);
+      rerender();
+      return;
+    }
+    if (action === 'refresh_diagnostics') { await hookService.request('diagnostics'); return; }
+    if (action === 'older_diagnostics' || action === 'newer_diagnostics') {
+      renderer.scrollDiagnostics(action === 'older_diagnostics' ? 1 : -1, true);
+      rerender();
+      return;
+    }
     if (action === 'refresh') await refresh();
     if (action === 'pick_folder') await pickSessionFolder();
     if (action === 'default_root') await resetToDefaultRoot();
@@ -382,6 +406,11 @@ async function main() {
       }
 
       if (isRelease) continue;
+      if (state.showDiagnostics && (cb === 64 || cb === 65)) {
+        renderer.scrollDiagnostics(cb === 64 ? -3 : 3);
+        rerender();
+        continue;
+      }
       if (cb === 64) {
         refresh();
         continue;
@@ -395,7 +424,24 @@ async function main() {
     }
     if (hadMouse) return;
 
+    if (state.showDiagnostics) {
+      if (['l', 'L', '\x1b'].includes(key)) runAction('toggle_diagnostics');
+      else if (['e', 'E'].includes(key)) runAction('filter_diagnostics');
+      else if (['r', 'R'].includes(key)) runAction('refresh_diagnostics');
+      else if (key === '\x1b[5~') runAction('newer_diagnostics');
+      else if (key === '\x1b[6~') runAction('older_diagnostics');
+      else if (['\x1b[A', '\x1b[B', '\x1b[H', '\x1b[1~'].includes(key)) {
+        renderer.scrollDiagnostics(key === '\x1b[A' ? -1 : key === '\x1b[B' ? 1 : -Infinity);
+        rerender();
+      }
+      return;
+    }
+
     switch (key) {
+      case 'l':
+      case 'L':
+        runAction('toggle_diagnostics');
+        break;
       case 'r':
       case 'R':
         refresh();
